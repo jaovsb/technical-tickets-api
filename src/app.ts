@@ -12,6 +12,10 @@ interface CreateTicketBody {
   responsavel?: unknown;
 }
 
+interface UpdateTicketStatusBody {
+  status?: unknown;
+}
+
 const app = express();
 
 app.use(express.json());
@@ -58,6 +62,7 @@ app.get("/tickets/:id", (req, res) => {
     });
   }
 
+
   const ticket = tickets.find((ticket) => ticket.id === id);
 
   if (!ticket) {
@@ -68,6 +73,40 @@ app.get("/tickets/:id", (req, res) => {
 
   return res.status(200).json(ticket);
 });
+
+app.patch("/tickets/:id/status", (req, res) => {
+
+    const id = Number(req.params.id);
+
+      if (!Number.isInteger(id) || id <= 0) {
+        return res.status(400).json({
+          error: "ID inválido.",
+        });
+      }
+
+    const ticket = tickets.find((ticket) => ticket.id === id);
+
+    if (!ticket) {
+    return res.status(404).json({
+      error: "Chamado não encontrado.",
+    });
+    }
+
+    const { status } = (req.body ?? {}) as UpdateTicketStatusBody;
+
+    if (!Object.values(TicketStatus).includes(status as TicketStatus)) {
+      return res.status(400).json({
+      error: "Status inválido.",
+    });
+  }
+
+  ticket.status = status as TicketStatus;
+
+  ticket.updatedAt = new Date();
+
+  return res.status(200).json(ticket);
+
+  })
 
 app.post("/tickets", (req, res) => {
   const {
