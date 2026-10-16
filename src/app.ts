@@ -1,9 +1,11 @@
 import express from "express";
 import {
-  Ticket,
-  TicketPriority,
-  TicketStatus,
-} from "./models/ticket";
+  createTicket,
+  findAllTickets,
+  findTicketById,
+  updateTicketStatus,
+} from "./repositories/ticketRepository";
+import { TicketPriority, TicketStatus } from "./models/ticket";
 
 interface CreateTicketBody {
   titulo?: unknown;
@@ -20,40 +22,27 @@ const app = express();
 
 app.use(express.json());
 
-const tickets: Ticket[] = [
-  {
-    id: 1,
-    titulo: "Erro ao registrar ponto",
-    descricao: "Usuário não consegue registrar uma nova batida.",
-    prioridade: TicketPriority.HIGH,
-    status: TicketStatus.OPEN,
-    responsavel: "João",
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  },
-  {
-    id: 2,
-    titulo: "Relatório não é gerado",
-    descricao: "Sistema apresenta erro ao gerar o relatório mensal.",
-    prioridade: TicketPriority.MEDIUM,
-    status: TicketStatus.IN_ANALYSIS,
-    responsavel: "Maria",
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  },
-];
-
 app.get("/health", (_req, res) => {
   return res.status(200).json({
     status: "ok",
   });
 });
 
-app.get("/tickets", (_req, res) => {
-  return res.status(200).json(tickets);
+app.get("/tickets", async (_req, res) => {
+  try {
+    const tickets = await findAllTickets();
+
+    return res.status(200).json(tickets);
+  } catch (error) {
+    console.error("Erro ao buscar tickets:", error);
+
+    return res.status(500).json({
+      error: "Erro interno do servidor.",
+    });
+  }
 });
 
-app.get("/tickets/:id", (req, res) => {
+app.get("/tickets/:id", async (req, res) => {
   const id = Number(req.params.id);
 
   if (!Number.isInteger(id) || id <= 0) {
@@ -62,59 +51,67 @@ app.get("/tickets/:id", (req, res) => {
     });
   }
 
+  try {
+    const ticket = await findTicketById(id);
 
-  const ticket = tickets.find((ticket) => ticket.id === id);
+    if (!ticket) {
+      return res.status(404).json({
+        error: "Chamado não encontrado.",
+      });
+    }
 
-  if (!ticket) {
-    return res.status(404).json({
-      error: "Chamado não encontrado.",
+    return res.status(200).json(ticket);
+  } catch (error) {
+    console.error("Erro ao buscar ticket:", error);
+
+    return res.status(500).json({
+      error: "Erro interno do servidor.",
+    });
+  }
+});
+
+app.patch("/tickets/:id/status", async (req, res) => {
+  const id = Number(req.params.id);
+
+  if (!Number.isInteger(id) || id <= 0) {
+    return res.status(400).json({
+      error: "ID inválido.",
     });
   }
 
-  return res.status(200).json(ticket);
-});
+  const { status } = (req.body ?? {}) as UpdateTicketStatusBody;
 
-app.patch("/tickets/:id/status", (req, res) => {
-
-    const id = Number(req.params.id);
-
-      if (!Number.isInteger(id) || id <= 0) {
-        return res.status(400).json({
-          error: "ID inválido.",
-        });
-      }
-
-    const ticket = tickets.find((ticket) => ticket.id === id);
-
-    if (!ticket) {
-    return res.status(404).json({
-      error: "Chamado não encontrado.",
-    });
-    }
-
-    const { status } = (req.body ?? {}) as UpdateTicketStatusBody;
-
-    if (!Object.values(TicketStatus).includes(status as TicketStatus)) {
-      return res.status(400).json({
+  if (!Object.values(TicketStatus).includes(status as TicketStatus)) {
+    return res.status(400).json({
       error: "Status inválido.",
     });
   }
 
-  ticket.status = status as TicketStatus;
+  try {
+    const ticket = await updateTicketStatus(
+      id,
+      status as TicketStatus,
+    );
 
-  ticket.updatedAt = new Date();
+    if (!ticket) {
+      return res.status(404).json({
+        error: "Chamado não encontrado.",
+      });
+    }
 
-  return res.status(200).json(ticket);
+    return res.status(200).json(ticket);
+  } catch (error) {
+    console.error("Erro ao atualizar status do ticket:", error);
 
-  })
+    return res.status(500).json({
+      error: "Erro interno do servidor.",
+    });
+  }
+});
 
-app.post("/tickets", (req, res) => {
-  const {
-    titulo,
-    descricao,
-    prioridade,
-    responsavel,
-  } = req.body as CreateTicketBody;
+app.post("/tickets", async (req, res) => {
+  const { titulo, descricao, prioridade, responsavel } = (req.body ??
+    {}) as CreateTicketBody;
 
   if (
     typeof titulo !== "string" ||
@@ -138,29 +135,28 @@ app.post("/tickets", (req, res) => {
 
   if (
     typeof prioridade !== "string" ||
-    !Object.values(TicketPriority).includes(
-      prioridade as TicketPriority,
-    )
+    !Object.values(TicketPriority).includes(prioridade as TicketPriority)
   ) {
     return res.status(400).json({
       error: "Prioridade inválida.",
     });
   }
 
-  const newTicket: Ticket = {
-    id: Math.max(...tickets.map((ticket) => ticket.id), 0) + 1,
-    titulo: titulo.trim(),
-    descricao: descricao.trim(),
-    prioridade: prioridade as TicketPriority,
-    status: TicketStatus.OPEN,
-    responsavel: responsavel.trim(),
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  };
+  try {
+    const newTicket = await createTicket({
+      titulo: titulo.trim(),
+      descricao: descricao.trim(),
+      prioridade: prioridade as TicketPriority,
+      responsavel: responsavel.trim(),
+    });
 
-  tickets.push(newTicket);
+    return res.status(201).json(newTicket);
+  } catch (error) {
+    console.error("Erro ao criar ticket:", error);
 
-  return res.status(201).json(newTicket);
+    return res.status(500).json({
+      error: "Erro interno do servidor.",
+    });
+  }
 });
-
 export { app };
